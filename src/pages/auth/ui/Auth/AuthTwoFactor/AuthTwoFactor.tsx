@@ -2,6 +2,12 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import ArrowBackIcon from '@mui/icons-material/ArrowBackOutlined';
 import { Logo } from '../../../../../shared/ui/Logo';
+import { useTwoFactor } from '../../../../../shared/api/hooks';
+import {
+  ROUTES,
+  TIMER_DURATION,
+  CODE_LENGTH,
+} from '../../../../../shared/constants';
 import type { AuthTwoFactorState } from './AuthTwoFactor.types';
 import {
   AuthTwoFactorWrapper,
@@ -20,14 +26,16 @@ import {
 
 export const AuthTwoFactor = () => {
   const [authState, setAuthState] = useState<AuthTwoFactorState>({
-    code: ['', '', '', '', '', ''],
+    code: Array(CODE_LENGTH).fill(''),
     error: '',
-    timeLeft: 60,
+    timeLeft: TIMER_DURATION,
     isTimerExpired: false,
     hasSubmittedCorrectCode: false,
   });
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
   const navigate = useNavigate();
+
+  const twoFactorMutation = useTwoFactor();
 
   useEffect(() => {
     if (authState.timeLeft > 0 && !authState.hasSubmittedCorrectCode) {
@@ -50,7 +58,7 @@ export const AuthTwoFactor = () => {
       newCode[index] = value;
       return { ...prev, code: newCode };
     });
-    if (value && index < 5) {
+    if (value && index < CODE_LENGTH - 1) {
       inputRefs.current[index + 1]?.focus();
     }
   };
@@ -58,6 +66,9 @@ export const AuthTwoFactor = () => {
   const handleKeyDown = (index: number, event: React.KeyboardEvent) => {
     if (event.key === 'Backspace' && !authState.code[index] && index > 0) {
       inputRefs.current[index - 1]?.focus();
+    }
+    if (event.key === 'Enter' && canSubmit) {
+      handleSubmit();
     }
   };
 
@@ -74,25 +85,40 @@ export const AuthTwoFactor = () => {
       }
       return { ...prev, code: newCode };
     });
-    const lastFilledIndex = Math.min(pastedData.length - 1, 5);
+    const lastFilledIndex = Math.min(pastedData.length - 1, CODE_LENGTH - 1);
     inputRefs.current[lastFilledIndex]?.focus();
   };
 
   const handleBack = () => {
-    navigate('/');
+    navigate(ROUTES.LOGIN);
   };
 
   const handleSubmit = () => {
     const fullCode = authState.code.join('');
-    console.log('2FA Code:', fullCode);
-    setAuthState((prev) => ({ ...prev, hasSubmittedCorrectCode: true }));
+
+    twoFactorMutation.mutate(
+      { code: fullCode, token: 'temp-token-123' },
+      {
+        onSuccess: () => {
+          setAuthState((prev) => ({ ...prev, hasSubmittedCorrectCode: true }));
+        },
+        onError: () => {
+          setAuthState((prev) => ({
+            ...prev,
+            code: Array(CODE_LENGTH).fill(''),
+            error: '',
+          }));
+          inputRefs.current[0]?.focus();
+        },
+      }
+    );
   };
 
   const handleGetNewCode = () => {
     setAuthState({
-      code: ['', '', '', '', '', ''],
+      code: Array(CODE_LENGTH).fill(''),
       error: '',
-      timeLeft: 60,
+      timeLeft: TIMER_DURATION,
       isTimerExpired: false,
       hasSubmittedCorrectCode: false,
     });
@@ -160,7 +186,7 @@ export const AuthTwoFactor = () => {
         {shouldShowButton && !shouldShowGetNewButton && (
           <AuthTwoFactorSubmitButton
             variant="contained"
-            disabled={!canSubmit}
+            disabled={!canSubmit || twoFactorMutation.isPending}
             onClick={handleSubmit}
           >
             Continue

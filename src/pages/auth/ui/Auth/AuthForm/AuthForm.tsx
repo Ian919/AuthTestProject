@@ -5,7 +5,12 @@ import { Logo } from '../../../../../shared/ui/Logo';
 import VectorItem from '/src/assets/logos/VectorItem.svg';
 import VectorLock from '/src/assets/logos/VectorLock.svg';
 import { authSchema } from '../../../lib/validation';
-import type { AuthFormErrors } from './AuthForm.types';
+import { useLogin } from '../../../../../shared/api/hooks';
+import {
+  handleValidationError,
+  validateWithSchema,
+} from '../../../../../shared/utils/validation';
+import { ROUTES } from '../../../../../shared/constants';
 import {
   AuthFormWrapper,
   AuthFormCard,
@@ -21,50 +26,48 @@ import {
 } from './AuthForm.styled';
 
 export const AuthForm = () => {
-  const [mail, setMail] = React.useState<string>('');
+  const [email, setEmail] = React.useState<string>('');
   const [password, setPassword] = React.useState<string>('');
-  const [errors, setErrors] = React.useState<AuthFormErrors>({});
   const navigate = useNavigate();
 
+  const loginMutation = useLogin();
+
   const validateForm = () => {
-    try {
-      const formData = { email: mail, password };
-      authSchema.parse(formData);
-      setErrors({});
-      return true;
-    } catch (error: any) {
-      if (error.errors) {
-        const fieldErrors: AuthFormErrors = {};
-        error.errors.forEach((err: any) => {
-          if (err.path[0] === 'email') {
-            fieldErrors.email = err.message;
-          } else if (err.path[0] === 'password') {
-            fieldErrors.password = err.message;
-          }
-        });
-        setErrors(fieldErrors);
-      }
-      return false;
+    const formData = { email, password };
+    const { isValid, error } = validateWithSchema(authSchema, formData);
+
+    if (!isValid && error) {
+      handleValidationError(error);
     }
+
+    return isValid;
   };
 
   const handleEmailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setMail(e.target.value);
-    if (errors.email) {
-      setErrors((prev) => ({ ...prev, email: undefined }));
-    }
+    setEmail(e.target.value);
   };
 
   const handlePasswordChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setPassword(e.target.value);
-    if (errors.password) {
-      setErrors((prev) => ({ ...prev, password: undefined }));
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleLogin();
     }
   };
 
   const handleLogin = () => {
     if (validateForm()) {
-      navigate('/two-factor');
+      loginMutation.mutate(
+        { email, password },
+        {
+          onSuccess: () => {
+            navigate(ROUTES.TWO_FACTOR);
+          },
+          onError: () => {},
+        }
+      );
     }
   };
 
@@ -79,16 +82,14 @@ export const AuthForm = () => {
             Sign in to your account to <br /> continue
           </AuthFormTitle>
         </AuthFormTitleContainer>
-        <AuthFormForm>
+        <AuthFormForm onKeyDown={handleKeyDown}>
           <AuthFormEmailField
             placeholder="Email"
             variant="outlined"
             size="small"
             fullWidth
-            value={mail}
+            value={email}
             onChange={handleEmailChange}
-            error={!!errors.email}
-            helperText={errors.email}
             slotProps={{
               input: {
                 startAdornment: (
@@ -107,8 +108,6 @@ export const AuthForm = () => {
             fullWidth
             value={password}
             onChange={handlePasswordChange}
-            error={!!errors.password}
-            helperText={errors.password}
             slotProps={{
               input: {
                 startAdornment: (
@@ -125,7 +124,7 @@ export const AuthForm = () => {
           <AuthFormSubmitButton
             variant="contained"
             fullWidth
-            disabled={!mail || !password}
+            disabled={!email || !password || loginMutation.isPending}
             onClick={handleLogin}
           >
             Log in
